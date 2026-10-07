@@ -1,0 +1,78 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>DA-2 Water Tank Control Report</title>
+<style>
+ body{font-family:"Segoe UI",Arial,sans-serif;max-width:900px;margin:24px auto;color:#222;line-height:1.45;font-size:14px}
+ h1{font-size:22px;margin-bottom:2px} h2{font-size:16px;border-bottom:1px solid #ccc;padding-bottom:3px;margin-top:22px}
+ table{border-collapse:collapse;margin:8px 0;font-size:12px} th,td{border:1px solid #bbb;padding:4px 8px;text-align:right} th:first-child,td:first-child{text-align:left}
+ th{background:#eef2f7} img{width:100%;border:1px solid #ddd;margin:6px 0} code{background:#f3f3f3;padding:1px 4px}
+ .cap{font-size:12px;color:#555;text-align:center;margin-top:-2px}
+ @media print{h2{page-break-after:avoid} img{page-break-inside:avoid}}
+</style></head><body>
+<h1>Digital Assignment 2: Water Tank Level Control</h1>
+<div>Conventional PI vs TD3 Reinforcement Learning vs LSTM controller. MATLAB R2026a (Simulink, Reinforcement Learning Toolbox, Deep Learning Toolbox)</div>
+
+<h2>1. Objective</h2>
+<p>Use the water-tank plant from the MathWorks example <i>Tune PI Controller Using Reinforcement Learning</i> (TD3). Replace the PI controller with an LSTM controller that uses the previous 4 memory samples. Compare the error signal <b>e(t) = Desired water level − Feedback</b> for the conventional PI, the TD3-RL controller and the LSTM controller, with the transient region highlighted.</p>
+
+<h2>2. Plant and simulation set-up</h2>
+<ul>
+ <li>Plant: nonlinear water tank, dH/dt = (b·u − a·√H)/A, from the example model <code>watertankLQG.slx</code>, with band-limited white process noise (variance 0.01).</li>
+ <li>Sample time Ts = 1 s, simulation time Tf = 100 s. Pump input saturation is kept exactly as in the example.</li>
+ <li>Main test: reference = 10 m, initial level H0 = 1 m, noise seed = 1 (same scenario as the MathWorks example). Two extra tests check generalisation: (ref 12, H0 0.5) and (ref 8, H0 2).</li>
+</ul>
+
+<h2>3. Controllers</h2>
+<table>
+<tr><th>Controller</th><th style="text-align:left">Description</th></tr>
+<tr><td>Conventional PI</td><td style="text-align:left">Tuned with Control System Tuner (LQG goal): Kp = 3.4373, Ki = 0.0358</td></tr>
+<tr><td>TD3-RL</td><td style="text-align:left">Pretrained TD3 agent <code>WaterTankPITuningTD3AgentUseCase1.mat</code>. The actor is linear (<code>myBasisFcn</code>), so its weights are the PI gains: Kp = 3.8090, Ki = 0.1130</td></tr>
+<tr><td>LSTM</td><td style="text-align:left">Replaces the PID Controller block in the same plant model (<code>watertankLSTM.slx</code>, MATLAB System block <code>LSTMController.m</code>)</td></tr>
+</table>
+
+<h3>LSTM controller design</h3>
+<ul>
+ <li><b>Input:</b> a sequence of the <b>previous 4 memory samples</b> (k−3 … k). Each sample holds 2 features: error e and integral of error ∫e. These are the same observations the TD3 agent uses.</li>
+ <li><b>Network:</b> sequenceInput(2) → LSTM(32 hidden units, last output) → FC(16) → tanh → FC(1) → u(k).</li>
+ <li><b>Training:</b> supervised imitation of the PI control law. Data came from 300 closed-loop Simulink episodes with random reference (8–12 m), initial level (0–2 m), noise seed and perturbed gains, so the network sees a wide range of states. That gave 30,300 windows, split 85/15 into training and validation. Settings: Adam, 60 epochs, MSE loss. Final validation MSE was about 3×10<sup>−6</sup> (normalised).</li>
+ <li><b>Deployment:</b> the trained network runs inside Simulink at every sample (Ts = 1 s) in closed loop with the nonlinear plant.</li>
+</ul>
+<img src="results/lstm_training_loss.png"><div class="cap">Fig. 1: LSTM training and validation loss</div>
+
+<h2>4. Results: error signal comparison</h2>
+<img src="results/error_comparison.png">
+<div class="cap">Fig. 2: Error e(t) = desired level − feedback. Shaded yellow = highlighted area (transient, 0–20 s), shown enlarged bottom-left. Bottom-right zooms in on the steady state.</div>
+
+<table>
+<tr><th>Test 1 (ref 10, H0 1)</th><th>IAE</th><th>ISE</th><th>ITAE</th><th>Mean |e| 60–100 s</th><th>Rise time (s)</th><th>Settling time (s)</th><th>Overshoot (%)</th><th>LQG cost</th></tr>
+<tr><td>Conventional PI</td><td>29.67</td><td>132.04</td><td>471.9</td><td>0.076</td><td>2.60</td><td>10.20</td><td>0</td><td>−155.72</td></tr>
+<tr><td>TD3-RL</td><td>26.90</td><td>131.74</td><td>265.6</td><td>0.031</td><td>2.60</td><td>17.07</td><td>2.99</td><td>−155.37</td></tr>
+<tr><td>LSTM</td><td>29.81</td><td>132.07</td><td>483.2</td><td>0.080</td><td>2.60</td><td>10.08</td><td>0</td><td>−155.71</td></tr>
+</table>
+
+<img src="results/level_and_control.png"><div class="cap">Fig. 3: Water level and controller output (Test 1)</div>
+<img src="results/error_all_tests.png"><div class="cap">Fig. 4: Error signal for three reference / initial-level scenarios</div>
+
+<table>
+<tr><th>IAE</th><th>Conventional PI</th><th>TD3-RL</th><th>LSTM</th></tr>
+<tr><td>Test 1 (ref 10, H0 1)</td><td>29.67</td><td>26.90</td><td>29.81</td></tr>
+<tr><td>Test 2 (ref 12, H0 0.5)</td><td>35.26</td><td>46.06</td><td>35.77</td></tr>
+<tr><td>Test 3 (ref 8, H0 2)</td><td>24.06</td><td>11.75</td><td>23.87</td></tr>
+</table>
+
+<h2>5. Discussion</h2>
+<ul>
+ <li><b>Highlighted area (transient):</b> for the first ~3 s all three controllers drive the pump into saturation, so the error falls identically and the rise time is the same (2.6 s). After that they differ. The PI and LSTM approach the reference from below, leaving a small positive error of about 0.1–0.2 m that the low integral gain removes slowly. The TD3-RL controller has a larger integral gain (Ki = 0.113 vs 0.036), so it overshoots slightly (about 3 %, negative error) and then converges.</li>
+ <li><b>Steady state:</b> TD3-RL has the smallest residual error (mean |e| = 0.031 m vs 0.076 m) and the lowest IAE/ITAE in Tests 1 and 3. Its overshoot gives it a longer settling time, and it does worse in Test 2 (ref 12), where the overshoot is larger.</li>
+ <li><b>LSTM:</b> working from only the last 4 memory samples, the LSTM controller reproduces the PI behaviour very closely: the RMS difference between the LSTM and PI control signals is 0.026, and IAE is within 1.5 % in all tests, including references it was not specifically trained on. Its LQG cost (−155.71) is essentially the same as the PI (−155.72). Since it learned by imitating the PI, its performance is bounded by the PI it was trained on. Training it on the TD3 agent, or with an RL objective, would be the natural next step.</li>
+ <li><b>Conclusion:</b> all three controllers are stable and track the reference. The TD3-tuned controller gives the lowest error in the main test. The LSTM shows that a neural controller with a 4-sample memory can replace the conventional PI controller in the same plant with equivalent closed-loop performance.</li>
+</ul>
+
+<h2>6. Files and how to run</h2>
+<ul>
+ <li><code>build_models.m</code> creates <code>watertankPI_cmp.slx</code> (PI plus signal loggers) and <code>watertankLSTM.slx</code> (PID block replaced by the LSTM block) from <code>watertankLQG.slx</code>.</li>
+ <li><code>DA2_main.m</code> loads the TD3 agent, generates data, trains the LSTM, runs all simulations and saves figures and tables in <code>results/</code>.</li>
+ <li><code>LSTMController.m</code> is the MATLAB System object holding the 4-sample memory and running the LSTM (used by the Simulink block).</li>
+ <li><code>lstmController.mat</code> holds the trained network and scaling.</li>
+</ul>
+<p>To run, open MATLAB in the project folder and enter <code>DA2_main</code>. It takes about 2–3 minutes.</p>
+</body></html>
