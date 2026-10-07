@@ -1,9 +1,5 @@
-The save into your Downloads folder failed twice because of an error in the permission check. I'll try saving it in the session workspace instead.
 
-I couldn't save the file: an error in the app's permission check blocked every write, and retrying would only add delays. Here's the full README instead. Save it as `README.md` inside the `DA2_AI_Project` folder, next to the `results/` folder, so the figure links work. Or ask me again later and I'll write it there myself.
-
-````markdown
-# Digital Assignment 2: Water Tank Level Control
+ Water Tank Level Control
 
 **Conventional PI vs TD3 Reinforcement Learning vs LSTM controller**
 MATLAB R2026a (Simulink, Reinforcement Learning Toolbox, Deep Learning Toolbox)
